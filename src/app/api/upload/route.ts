@@ -1,3 +1,5 @@
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
 import { NextRequest, NextResponse } from 'next/server';
 import { extractDocument } from '@/lib/extractor';
 import { documentStore } from '@/lib/document-store';

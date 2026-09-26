@@ -22,7 +22,7 @@
  */
 
 import { randomUUID } from 'crypto';
-import { PDFParse } from 'pdf-parse';
+import { PDFParse } from 'pdf-parse/lib/pdf-parse.js';
 import mammoth from 'mammoth';
 import type {
   DocumentPage,
