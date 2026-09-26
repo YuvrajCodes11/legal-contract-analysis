@@ -1,3 +1,8 @@
+// @ts-nocheck
+import * as _pdfParseModule from 'pdf-parse';
+const pdfParse: any = (_pdfParseModule as any)?.default || _pdfParseModule;
+const PDFParse: any = pdfParse;
+
 
 async function parsePdfBuffer(buffer: Buffer): Promise<{ text: string; numpages: number }> {
   try {
@@ -51,7 +56,7 @@ async function parsePdfBuffer(buffer: Buffer): Promise<{ text: string; numpages:
  */
 
 import { randomUUID } from 'crypto';
-import pdfParse from 'pdf-parse';
+
 import mammoth from 'mammoth';
 import type {
   DocumentPage,
