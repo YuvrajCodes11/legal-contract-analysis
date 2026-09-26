@@ -6,7 +6,7 @@ const nextConfig = {
   eslint: {
     ignoreDuringBuilds: true,
   },
-  serverExternalPackages: ['pdf-parse', 'pdfjs-dist', 'mammoth'],
+  serverExternalPackages: ['mammoth'],
 };
 
 export default nextConfig;

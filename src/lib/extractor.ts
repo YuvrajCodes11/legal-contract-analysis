@@ -1,30 +1,7 @@
 // @ts-nocheck
-import fs from 'fs';
 import mammoth from 'mammoth';
 import { randomUUID } from 'crypto';
 import type { DocumentPage, DocumentSection, ExtractedDocument } from '@/types';
-
-// Guard against pdf-parse internal debug crash on Vercel
-const originalReadFileSync = fs.readFileSync;
-const originalWriteFileSync = fs.writeFileSync;
-
-fs.readFileSync = function (targetPath: any, ...args: any[]) {
-  if (typeof targetPath === 'string' && targetPath.includes('05-versions-space.pdf')) {
-    return Buffer.from('%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj 2 0 obj<</Type/Pages/Count 1/Kids[3 0 R]>>endobj 3 0 obj<</Type/Page/MediaBox[0 0 3 3]>>endobj\nxref\n0 4\ntrailer<</Size 4/Root 1 0 R>>\nstartxref\n120\n%%EOF');
-  }
-  return originalReadFileSync.call(fs, targetPath, ...args);
-};
-
-fs.writeFileSync = function (targetPath: any, ...args: any[]) {
-  if (typeof targetPath === 'string' && targetPath.includes('05-versions-space.pdf')) {
-    return;
-  }
-  try {
-    return originalWriteFileSync.call(fs, targetPath, ...args);
-  } catch (e) {
-    // Suppress EROFS errors on read-only serverless filesystems
-  }
-};
 
 function parseBufferFallback(buffer: Buffer): { pages: DocumentPage[]; fullText: string } {
   const raw = buffer.toString('latin1');
@@ -97,30 +74,12 @@ export async function extractDocument(
     fullText = result.value;
     pages = [{ pageNumber: 1, text: fullText }];
   } else {
-    try {
-      const pdfModule = await import('pdf-parse');
-      const parseFn = typeof pdfModule === 'function' ? pdfModule : (pdfModule as any).default || pdfModule;
-      const data = await parseFn(buffer);
-      fullText = data.text || '';
-      
-      const rawPages = fullText.split(/\f/);
-      if (rawPages.length > 1) {
-        pages = rawPages.map((txt, idx) => ({ pageNumber: idx + 1, text: txt.trim() }));
-      } else {
-        const pageCount = data.numpages || 1;
-        const lines = fullText.split('\n');
-        const linesPerPage = Math.max(1, Math.ceil(lines.length / pageCount));
-        pages = Array.from({ length: pageCount }, (_, idx) => ({
-          pageNumber: idx + 1,
-          text: lines.slice(idx * linesPerPage, (idx + 1) * linesPerPage).join('\n').trim(),
-        }));
-      }
-    } catch (err) {
-      console.warn("pdf-parse fallback engaged:", err);
-      const fallback = parseBufferFallback(buffer);
-      pages = fallback.pages;
-      fullText = fallback.fullText;
-    }
+    // Pure-JS PDF text extraction: reads text directly out of the PDF byte
+    // stream. No native modules, no canvas/DOMMatrix, nothing that can fail
+    // to load in a serverless runtime.
+    const fallback = parseBufferFallback(buffer);
+    pages = fallback.pages;
+    fullText = fallback.fullText;
   }
 
   const sections = detectSections(pages);
