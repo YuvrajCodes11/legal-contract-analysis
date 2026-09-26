@@ -23,6 +23,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       success: true,
       document,
+      data: document,
       documentId: document.id,
       id: document.id,
     });
@@ -39,6 +40,6 @@ export async function POST(req: NextRequest) {
       uploadedAt: new Date().toISOString(),
     };
     documentStore.addDocument(fallbackDoc as any);
-    return NextResponse.json({ success: true, document: fallbackDoc, documentId: fallbackDoc.id, id: fallbackDoc.id });
+    return NextResponse.json({ success: true, document: fallbackDoc, data: fallbackDoc, documentId: fallbackDoc.id, id: fallbackDoc.id });
   }
 }
