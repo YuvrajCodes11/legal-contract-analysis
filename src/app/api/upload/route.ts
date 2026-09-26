@@ -1,8 +1,9 @@
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
 import { NextRequest, NextResponse } from 'next/server';
 import { extractDocument } from '@/lib/extractor';
 import { documentStore } from '@/lib/document-store';
+
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
 
 export async function POST(req: NextRequest) {
   try {
@@ -10,57 +11,25 @@ export async function POST(req: NextRequest) {
     const file = formData.get('file') as File | null;
 
     if (!file) {
-      return NextResponse.json(
-        { success: false, error: 'No file provided in request.' },
-        { status: 400 }
-      );
+      return NextResponse.json({ success: false, error: 'No file uploaded.' }, { status: 400 });
     }
 
-    const filename = file.name;
-    const mimeType = file.type;
     const arrayBuffer = await file.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
+    const document = await extractDocument(buffer, file.name, file.type);
 
-    const extractionResult = await extractDocument({ buffer, filename, mimeType });
-
-    if (extractionResult.status === 'SCANNED_PDF_NO_TEXT') {
-      return NextResponse.json(
-        {
-          success: false,
-          status: 'SCANNED_PDF_NO_TEXT',
-          message: extractionResult.message,
-          filename: extractionResult.filename,
-          averageCharsPerPage: extractionResult.averageCharsPerPage,
-          totalAlphanumericChars: extractionResult.totalAlphanumericChars,
-        },
-        { status: 422 }
-      );
-    }
-
-    if (extractionResult.status !== 'OK') {
-      return NextResponse.json(
-        {
-          success: false,
-          error: extractionResult.message,
-          filename: extractionResult.filename,
-        },
-        { status: 400 }
-      );
-    }
-
-    // Save extracted document & buffer
-    documentStore.addDocument(extractionResult.document, buffer, mimeType);
+    documentStore.addDocument(document);
 
     return NextResponse.json({
       success: true,
-      data: extractionResult.document,
+      document,
+      documentId: document.id,
+      id: document.id,
     });
-  } catch (err) {
+  } catch (err: any) {
+    console.error('Upload processing error:', err);
     return NextResponse.json(
-      {
-        success: false,
-        error: `Upload processing failed: ${err instanceof Error ? err.message : String(err)}`,
-      },
+      { success: false, error: err?.message || 'Failed to process document upload.' },
       { status: 500 }
     );
   }
