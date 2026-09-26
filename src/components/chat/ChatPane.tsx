@@ -85,10 +85,11 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
 
     try {
       const docIds = selectedDocId ? [selectedDocId] : documents.map((d) => d.id);
+      const targetDocs = documents.filter((d) => docIds.includes(d.id));
       const res = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ documentIds: docIds, question: query }),
+        body: JSON.stringify({ documentIds: docIds, documents: targetDocs, question: query }),
         signal: controller.signal,
       });
 

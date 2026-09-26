@@ -5,7 +5,7 @@ import { runAgentLoop } from '@/lib/agent-runner';
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { documentIds, question } = body;
+    const { documentIds, question, documents: providedDocs } = body;
 
     if (!question || typeof question !== 'string') {
       return new Response(
@@ -14,14 +14,17 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const docList = documentStore.listDocuments();
-    const idsToSearch = Array.isArray(documentIds) && documentIds.length > 0
-      ? documentIds
-      : docList.map((d) => d.id);
-
-    const targetDocs = idsToSearch
-      .map((id) => documentStore.getDocument(id))
-      .filter((d): d is NonNullable<typeof d> => d !== undefined);
+    const targetDocs = Array.isArray(providedDocs) && providedDocs.length > 0
+      ? providedDocs
+      : (() => {
+          const docList = documentStore.listDocuments();
+          const idsToSearch = Array.isArray(documentIds) && documentIds.length > 0
+            ? documentIds
+            : docList.map((d) => d.id);
+          return idsToSearch
+            .map((id) => documentStore.getDocument(id))
+            .filter((d): d is NonNullable<typeof d> => d !== undefined);
+        })();
 
     if (targetDocs.length === 0) {
       return new Response(
