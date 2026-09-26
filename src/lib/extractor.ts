@@ -1,6 +1,6 @@
 // @ts-nocheck
 import mammoth from 'mammoth';
-import zlib from 'zlib';
+import { extractText, getDocumentProxy } from 'unpdf';
 import { randomUUID } from 'crypto';
 import type { DocumentPage, DocumentSection, ExtractedDocument } from '@/types';
 
@@ -144,12 +144,12 @@ export async function extractDocument(
     fullText = result.value;
     pages = [{ pageNumber: 1, text: fullText }];
   } else {
-    // Pure-JS PDF text extraction: reads text directly out of the PDF byte
-    // stream. No native modules, no canvas/DOMMatrix, nothing that can fail
-    // to load in a serverless runtime.
-    const fallback = parseBufferFallback(buffer);
-    pages = fallback.pages;
-    fullText = fallback.fullText;
+    const pdf = await getDocumentProxy(new Uint8Array(buffer));
+    const { text } = await extractText(pdf, { mergePages: false });
+    const pageTexts = Array.isArray(text) ? text : [text];
+    pages = pageTexts.map((t, i) => ({ pageNumber: i + 1, text: t }));
+    fullText = pageTexts.join(' ').replace(/\s+/g, ' ').trim()
+      || 'No extractable text found in this document.';
   }
 
   const sections = detectSections(pages);
