@@ -20,13 +20,9 @@ A web app for analyzing legal contracts: upload a PDF or DOCX, ask questions abo
 
 ## Screenshots
 
-> _Add screenshots here before submitting:_
-> 1. Upload flow (drag-and-drop / file picker)
-> 2. Chat with a verified citation shown in an answer
-> 3. Clicking a citation and the highlighted passage in the document viewer
-> 4. Document comparison view with severity-categorized changes
+<img width="1470" height="956" alt="image" src="https://github.com/user-attachments/assets/c73a68aa-f932-497a-9bb8-3419377febac" />
 
----
+<img width="1470" height="956" alt="image" src="https://github.com/user-attachments/assets/2e388086-7c89-4808-b12e-863dbb3e2756" />
 
 ## How to run it locally
 
