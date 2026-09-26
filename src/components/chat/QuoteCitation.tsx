@@ -4,7 +4,7 @@ import { useCitationJump } from '@/hooks/useCitationJump';
 import { CheckCircle2, AlertTriangle, ExternalLink } from 'lucide-react';
 
 interface QuoteCitationProps {
-  citation: QuoteVerificationResult;
+  citation: QuoteVerificationResult & { docId?: string; docFilename?: string };
   docId: string;
 }
 
@@ -16,7 +16,7 @@ export const QuoteCitation: React.FC<QuoteCitationProps> = ({ citation, docId })
       return;
     }
     dispatchJump({
-      docId,
+      docId: citation.docId || docId,
       pageNumber: citation.pageNumber,
       startChar: citation.startChar,
       endChar: citation.endChar ?? citation.startChar + citation.rawQuote.length,
@@ -48,6 +48,11 @@ export const QuoteCitation: React.FC<QuoteCitationProps> = ({ citation, docId })
         <p className="text-zinc-300 italic font-serif leading-relaxed line-clamp-3">
           &ldquo;{citation.matchedText || citation.rawQuote}&rdquo;
         </p>
+        {citation.docFilename && (
+          <span className="block mt-1 text-[9px] text-emerald-400/60 font-mono truncate">
+            \u2014 {citation.docFilename}
+          </span>
+        )}
       </div>
     );
   }

@@ -9,7 +9,7 @@ export interface ChatMessage {
   role: 'user' | 'assistant';
   content: string;
   steps?: AgentStepEvent[];
-  citations?: QuoteVerificationResult[];
+  citations?: (QuoteVerificationResult & { docId?: string; docFilename?: string })[];
   isStreaming?: boolean;
 }
 
@@ -19,24 +19,41 @@ interface ChatPaneProps {
   onSelectDoc: (id: string) => void;
 }
 
+const WELCOME_MESSAGE: ChatMessage = {
+  id: 'welcome',
+  role: 'assistant',
+  content: 'Mission-Critical Contract Analysis Workstation ready. Select a document and ask a targeted legal question.',
+};
+
+const storageKey = (docId?: string) => `contractChat:${docId || 'all'}`;
+
+function loadMessages(docId?: string): ChatMessage[] {
+  if (typeof window === 'undefined') return [WELCOME_MESSAGE];
+  try {
+    const raw = window.localStorage.getItem(storageKey(docId));
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+    }
+  } catch {
+    // ignore corrupt storage
+  }
+  return [WELCOME_MESSAGE];
+}
+
 export const ChatPane: React.FC<ChatPaneProps> = ({
   documents,
   selectedDocId,
   onSelectDoc,
 }) => {
-  const [messages, setMessages] = useState<ChatMessage[]>([
-    {
-      id: 'welcome',
-      role: 'assistant',
-      content: 'Mission-Critical Contract Analysis Workstation ready. Select a document and ask a targeted legal question.',
-    },
-  ]);
+  const [messages, setMessages] = useState<ChatMessage[]>(() => loadMessages(selectedDocId));
   const [input, setInput] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
   const [currentSteps, setCurrentSteps] = useState<AgentStepEvent[]>([]);
 
   const abortControllerRef = useRef<AbortController | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const prevDocIdRef = useRef(selectedDocId);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -45,6 +62,24 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
   useEffect(() => {
     scrollToBottom();
   }, [messages, currentSteps]);
+
+  // Reload the right conversation whenever the active document changes.
+  useEffect(() => {
+    if (prevDocIdRef.current !== selectedDocId) {
+      setMessages(loadMessages(selectedDocId));
+      prevDocIdRef.current = selectedDocId;
+    }
+  }, [selectedDocId]);
+
+  // Persist per-document conversation as it changes.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      window.localStorage.setItem(storageKey(selectedDocId), JSON.stringify(messages));
+    } catch {
+      // storage full/unavailable — non-fatal
+    }
+  }, [messages, selectedDocId]);
 
   const handleStopGenerating = () => {
     if (abortControllerRef.current) {
@@ -86,6 +121,7 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
     try {
       const docIds = selectedDocId ? [selectedDocId] : documents.map((d) => d.id);
       const targetDocs = documents.filter((d) => docIds.includes(d.id));
+
       const res = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -119,14 +155,14 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
               if (data.type === 'step') {
                 setCurrentSteps((prev) => [...prev, data.event]);
               } else if (data.type === 'error') {
-      setMessages((prev) =>
-        prev.map((msg) =>
-          msg.id === assistantMsgId
-            ? { ...msg, content: "⚠️ " + (data.error || "Unable to complete request."), isStreaming: false }
-            : msg
-        )
-      );
-    } else if (data.type === 'done') {
+                setMessages((prev) =>
+                  prev.map((msg) =>
+                    msg.id === assistantMsgId
+                      ? { ...msg, content: '\u26a0\ufe0f ' + (data.error || 'Unable to complete request.'), isStreaming: false }
+                      : msg
+                  )
+                );
+              } else if (data.type === 'done') {
                 setMessages((prev) =>
                   prev.map((msg) =>
                     msg.id === assistantMsgId
@@ -173,7 +209,6 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
 
   return (
     <div className="flex flex-col h-full bg-zinc-900 border-r border-zinc-800 text-zinc-100 font-sans">
-      {/* Header Document Selector */}
       <div className="p-3 bg-zinc-950 border-b border-zinc-800 flex items-center justify-between gap-3">
         <div className="flex items-center gap-2 min-w-0">
           <FileText className="w-4 h-4 text-emerald-400 shrink-0" />
@@ -193,7 +228,6 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
         </select>
       </div>
 
-      {/* Messages Feed */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
         {messages.map((msg) => (
           <div key={msg.id} className={`flex gap-3 ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
@@ -208,24 +242,20 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
                 ? 'bg-zinc-800 text-zinc-100 border border-zinc-700'
                 : 'bg-zinc-950/80 text-zinc-200 border border-zinc-800 shadow-sm'
             }`}>
-              {/* Role Header */}
               <div className="flex items-center justify-between gap-2 mb-1.5 border-b border-zinc-800/60 pb-1">
                 <span className="text-[10px] uppercase font-mono tracking-wider font-semibold text-zinc-400">
                   {msg.role === 'user' ? 'Legal Counsel' : 'Agentic Research Engine'}
                 </span>
               </div>
 
-              {/* Message Content */}
               <div className="text-xs leading-relaxed font-sans whitespace-pre-wrap">
                 {msg.content}
               </div>
 
-              {/* Trace Feed while streaming */}
               {msg.isStreaming && (
                 <AgentTraceFeed steps={currentSteps} isThinking={isGenerating} />
               )}
 
-              {/* Verified Citations */}
               {msg.citations && msg.citations.length > 0 && (
                 <div className="mt-3 pt-2 border-t border-zinc-800">
                   <span className="text-[10px] font-mono text-zinc-400 uppercase tracking-wider block mb-1">
@@ -235,7 +265,7 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
                     <QuoteCitation
                       key={idx}
                       citation={citation}
-                      docId={selectedDocId || (documents[0]?.id ?? '')}
+                      docId={citation.docId || selectedDocId || (documents[0]?.id ?? '')}
                     />
                   ))}
                 </div>
@@ -252,7 +282,6 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Suggested Quick Queries */}
       <div className="px-3 py-2 bg-zinc-950 border-t border-zinc-800/80 flex items-center gap-2 overflow-x-auto no-scrollbar">
         <Sparkles className="w-3.5 h-3.5 text-zinc-500 shrink-0" />
         <span className="text-[10px] font-mono uppercase text-zinc-500 shrink-0">Quick Queries:</span>
@@ -276,7 +305,6 @@ export const ChatPane: React.FC<ChatPaneProps> = ({
         </button>
       </div>
 
-      {/* Input Bar */}
       <div className="p-3 bg-zinc-950 border-t border-zinc-800">
         <div className="flex items-center gap-2 bg-zinc-900 border border-zinc-800 rounded-md p-1.5 focus-within:border-zinc-700">
           <input

@@ -14,11 +14,30 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'No file provided.' }, { status: 400 });
     }
 
+    const ext = file.name.slice(file.name.lastIndexOf('.')).toLowerCase();
+    if (ext !== '.pdf' && ext !== '.docx') {
+      return NextResponse.json(
+        { success: false, error: `Unsupported file extension "${ext}". Only PDF and DOCX are supported.` },
+        { status: 415 }
+      );
+    }
+
     const arrayBuffer = await file.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
-    const document = await extractDocument(buffer, file.name, file.type);
+    const result = await extractDocument(buffer, file.name, file.type);
 
-    documentStore.addDocument(document);
+    if (result.status === 'SCANNED_PDF_NO_TEXT') {
+      return NextResponse.json(result, { status: 422 });
+    }
+    if (result.status === 'UNSUPPORTED_FORMAT') {
+      return NextResponse.json(result, { status: 415 });
+    }
+    if (result.status === 'EXTRACTION_ERROR') {
+      return NextResponse.json(result, { status: 500 });
+    }
+
+    const document = result.document;
+    documentStore.addDocument(document, buffer, file.type);
 
     return NextResponse.json({
       success: true,
@@ -28,18 +47,10 @@ export async function POST(req: NextRequest) {
       id: document.id,
     });
   } catch (err: any) {
-    console.error('Upload handler fallback:', err);
-    // Guarantee 200 response with valid fallback document structure
-    const fallbackDoc = {
-      id: 'doc_' + Date.now(),
-      name: 'Uploaded Contract',
-      filename: 'Contract.pdf',
-      pages: [{ pageNumber: 1, text: 'Contract successfully loaded for analysis.' }],
-      sections: [{ title: 'General Provisions', pageNumber: 1 }],
-      fullText: 'Contract successfully loaded for analysis.',
-      uploadedAt: new Date().toISOString(),
-    };
-    documentStore.addDocument(fallbackDoc as any);
-    return NextResponse.json({ success: true, document: fallbackDoc, data: fallbackDoc, documentId: fallbackDoc.id, id: fallbackDoc.id });
+    console.error('Upload handler error:', err);
+    return NextResponse.json(
+      { success: false, error: `Upload failed: ${err instanceof Error ? err.message : String(err)}` },
+      { status: 500 }
+    );
   }
 }
