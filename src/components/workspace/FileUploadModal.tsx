@@ -47,7 +47,13 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
         body: formData,
       });
 
-      const data = await res.json();
+      const resText = await res.text();
+      let data: any = {};
+      try {
+        data = resText ? JSON.parse(resText) : {};
+      } catch {
+        throw new Error("Upload failed (" + res.status + "): " + (resText || res.statusText || "Server error"));
+      }
 
       if (res.status === 422 && data.status === 'SCANNED_PDF_NO_TEXT') {
         setScannedAlert({
