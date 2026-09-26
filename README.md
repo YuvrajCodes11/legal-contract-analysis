@@ -96,8 +96,4 @@ npx next start
 
 ## Notes on quote verification, large documents, and Part C
 
-See the attached submission note for a detailed explanation of:
-- How quote verification works and where it can fail
-- How large (150+ page) documents are handled without losing accuracy
-- Why Option 2 was chosen for Part C and the hardest part of building it
-- What would be built next with more time
+[Legal_Contract_Analysis_Workstation_Architecture_Review.pdf](https://github.com/user-attachments/files/32689236/Legal_Contract_Analysis_Workstation_Architecture_Review.pdf)
