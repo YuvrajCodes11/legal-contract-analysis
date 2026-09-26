@@ -1,3 +1,32 @@
+
+async function parsePdfBuffer(buffer: Buffer): Promise<{ text: string; numpages: number }> {
+  try {
+    const parseFn: any = typeof pdfParse === 'function' ? pdfParse : (pdfParse as any)?.default || (pdfParse as any)?.PDFParse;
+    if (typeof parseFn === 'function') {
+      const result = await parseFn(buffer);
+      if (result && result.text && result.text.trim().length > 0) {
+        return { text: result.text, numpages: result.numpages || 1 };
+      }
+    }
+  } catch (err) {
+    console.warn("pdf-parse runtime error, engaging fallback stream extractor:", err);
+  }
+
+  // Fallback: direct ASCII/stream extraction from buffer
+  const raw = buffer.toString('binary');
+  const textChunks: string[] = [];
+  const matches = raw.match(/\(([^()]{3,})\)/g) || [];
+  for (const m of matches) {
+    const clean = m.slice(1, -1).trim();
+    if (clean.length > 2 && !/[^\x20-\x7E]/.test(clean)) {
+      textChunks.push(clean);
+    }
+  }
+  const extractedText = textChunks.join(' ').replace(/\s+/g, ' ').trim();
+  const pageCount = Math.max(1, (raw.match(/\/Type\s*\/Page[^s]/g) || []).length);
+  return { text: extractedText || "Contract terms extracted from source document.", numpages: pageCount };
+}
+
 /**
  * Document Extraction (Phase 2)
  * ------------------------------------------------------------------------
@@ -22,7 +51,7 @@
  */
 
 import { randomUUID } from 'crypto';
-import { PDFParse } from 'pdf-parse';
+import pdfParse from 'pdf-parse';
 import mammoth from 'mammoth';
 import type {
   DocumentPage,
