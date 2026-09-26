@@ -1,30 +1,100 @@
 // @ts-nocheck
 import mammoth from 'mammoth';
+import zlib from 'zlib';
 import { randomUUID } from 'crypto';
 import type { DocumentPage, DocumentSection, ExtractedDocument } from '@/types';
 
-function parseBufferFallback(buffer: Buffer): { pages: DocumentPage[]; fullText: string } {
-  const raw = buffer.toString('latin1');
-  const textChunks: string[] = [];
-  
-  // Extract text within PDF parentheses
-  const matches = raw.match(/\((?:[^()\\]|\\.)*\)/g) || [];
-  for (const m of matches) {
-    const clean = m.slice(1, -1)
-      .replace(/\\([()\\])/g, '$1')
-      .replace(/\\n/g, '\n')
-      .replace(/\\r/g, '')
-      .replace(/\\t/g, ' ')
-      .trim();
-    if (clean.length > 1 && !/[^\x20-\x7E\n]/.test(clean)) {
-      textChunks.push(clean);
+function extractStreams(buffer: Buffer): Buffer[] {
+  const streams: Buffer[] = [];
+  const streamMarker = Buffer.from('stream');
+  const endstreamMarker = Buffer.from('endstream');
+
+  let searchStart = 0;
+  while (true) {
+    const streamIdx = buffer.indexOf(streamMarker, searchStart);
+    if (streamIdx === -1) break;
+
+    let dataStart = streamIdx + streamMarker.length;
+    if (buffer[dataStart] === 0x0d) dataStart++;
+    if (buffer[dataStart] === 0x0a) dataStart++;
+
+    const endIdx = buffer.indexOf(endstreamMarker, dataStart);
+    if (endIdx === -1) break;
+
+    let dataEnd = endIdx;
+    while (dataEnd > dataStart && (buffer[dataEnd - 1] === 0x0a || buffer[dataEnd - 1] === 0x0d)) {
+      dataEnd--;
+    }
+
+    streams.push(buffer.slice(dataStart, dataEnd));
+    searchStart = endIdx + endstreamMarker.length;
+  }
+  return streams;
+}
+
+function inflateIfPossible(data: Buffer): Buffer | null {
+  try {
+    return zlib.inflateSync(data);
+  } catch {
+    try {
+      return zlib.inflateRawSync(data);
+    } catch {
+      return null;
     }
   }
+}
 
-  const fullText = textChunks.join(' ').replace(/\s+/g, ' ').trim() || 'Contract text extracted from document.';
-  const pageMatch = raw.match(/\/Type\s*\/Page\b/g);
+function decodeLiteral(s: string): string {
+  return s
+    .replace(/\\n/g, '\n')
+    .replace(/\\r/g, '')
+    .replace(/\\t/g, ' ')
+    .replace(/\\\(/g, '(')
+    .replace(/\\\)/g, ')')
+    .replace(/\\\\/g, '\\');
+}
+
+function extractTextFromContentStream(content: string): string {
+  const parts: string[] = [];
+
+  const literalTjRegex = /\(((?:[^()\\]|\\.)*)\)\s*(?:Tj|'|")/g;
+  let m: RegExpExecArray | null;
+  while ((m = literalTjRegex.exec(content))) {
+    parts.push(decodeLiteral(m[1]));
+  }
+
+  const tjArrayRegex = /\[((?:[^\[\]]|\\.)*)\]\s*TJ/g;
+  while ((m = tjArrayRegex.exec(content))) {
+    const strRegex = /\(((?:[^()\\]|\\.)*)\)/g;
+    let sm: RegExpExecArray | null;
+    let piece = '';
+    while ((sm = strRegex.exec(m[1]))) {
+      piece += decodeLiteral(sm[1]);
+    }
+    if (piece) parts.push(piece);
+  }
+
+  return parts.join(' ');
+}
+
+function parseBufferFallback(buffer: Buffer): { pages: DocumentPage[]; fullText: string } {
+  const streams = extractStreams(buffer);
+  const textChunks: string[] = [];
+
+  for (const raw of streams) {
+    const decompressed = inflateIfPossible(raw) ?? raw;
+    const content = decompressed.toString('latin1');
+    const extracted = extractTextFromContentStream(content);
+    if (extracted.trim()) textChunks.push(extracted);
+  }
+
+  const fullText = textChunks.join(' ').replace(/\s+/g, ' ').trim()
+    || 'No extractable text found in this document.';
+
+  const rawLatin1 = buffer.toString('latin1');
+  const pageMatch = rawLatin1.match(/\/Type\s*\/Page\b/g);
   const pageCount = Math.max(1, pageMatch ? pageMatch.length : 1);
-  
+
   const words = fullText.split(' ');
   const wordsPerPage = Math.max(1, Math.ceil(words.length / pageCount));
   const pages: DocumentPage[] = Array.from({ length: pageCount }, (_, i) => ({
