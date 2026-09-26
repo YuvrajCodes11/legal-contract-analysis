@@ -54,7 +54,7 @@ export default function Home() {
     }
   };
 
-  const selectedDocument = documents.find((d) => d.id === selectedDocId) || documents[0];
+  const selectedDocument = documents.filter(Boolean).find((d) => d.id === selectedDocId) || documents.filter(Boolean)[0];
 
   return (
     <div className="flex flex-col h-screen w-screen overflow-hidden bg-zinc-950 text-zinc-100 font-sans">
