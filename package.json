@@ -11,6 +11,7 @@
     "postinstall": "node -e \"const fs=require('fs');const p='node_modules/pdf-parse/index.js';if(fs.existsSync(p)){let c=fs.readFileSync(p,'utf8');c=c.replace('let isDebugMode = !module.parent;','let isDebugMode = false;');fs.writeFileSync(p,c);console.log('✓ Patched pdf-parse debug flag');}\""
   },
   "dependencies": {
+    "@napi-rs/canvas": "^1.0.9",
     "clsx": "^2.1.1",
     "lucide-react": "^1.48.0",
     "mammoth": "^1.12.3",
