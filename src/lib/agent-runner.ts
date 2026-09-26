@@ -124,7 +124,7 @@ async function fetchLLMResponse(question: string, context: string): Promise<stri
       "Content-Type": "application/json"
     },
     body: JSON.stringify({
-      model: "allam-2-7b",
+      model: "openai/gpt-oss-20b",
       messages: [
         { role: "system", content: systemPrompt },
         { role: "user", content: userPrompt }
@@ -264,7 +264,7 @@ export async function runAgentLoop(
 
   const passagesContext = searchedHits.length > 0
     ? searchedHits.map((h) => `[Page ${h.pageNumber}]: "${h.text}"`).join('\n\n')
-    : primaryDoc.pages.slice(0, 3).map((p) => `[Page ${p.pageNumber}]: "${p.text}"`).join('\n\n');
+    : primaryDoc.pages.map((p) => `[Page ${p.pageNumber}]: "${p.text}"`).join('\n\n');
 
   let rawAnswer = '';
 

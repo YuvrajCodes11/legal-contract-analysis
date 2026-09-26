@@ -4,107 +4,6 @@ import { extractText, getDocumentProxy } from 'unpdf';
 import { randomUUID } from 'crypto';
 import type { DocumentPage, DocumentSection, ExtractedDocument } from '@/types';
 
-function extractStreams(buffer: Buffer): Buffer[] {
-  const streams: Buffer[] = [];
-  const streamMarker = Buffer.from('stream');
-  const endstreamMarker = Buffer.from('endstream');
-
-  let searchStart = 0;
-  while (true) {
-    const streamIdx = buffer.indexOf(streamMarker, searchStart);
-    if (streamIdx === -1) break;
-
-    let dataStart = streamIdx + streamMarker.length;
-    if (buffer[dataStart] === 0x0d) dataStart++;
-    if (buffer[dataStart] === 0x0a) dataStart++;
-
-    const endIdx = buffer.indexOf(endstreamMarker, dataStart);
-    if (endIdx === -1) break;
-
-    let dataEnd = endIdx;
-    while (dataEnd > dataStart && (buffer[dataEnd - 1] === 0x0a || buffer[dataEnd - 1] === 0x0d)) {
-      dataEnd--;
-    }
-
-    streams.push(buffer.slice(dataStart, dataEnd));
-    searchStart = endIdx + endstreamMarker.length;
-  }
-  return streams;
-}
-
-function inflateIfPossible(data: Buffer): Buffer | null {
-  try {
-    return zlib.inflateSync(data);
-  } catch {
-    try {
-      return zlib.inflateRawSync(data);
-    } catch {
-      return null;
-    }
-  }
-}
-
-function decodeLiteral(s: string): string {
-  return s
-    .replace(/\\n/g, '\n')
-    .replace(/\\r/g, '')
-    .replace(/\\t/g, ' ')
-    .replace(/\\\(/g, '(')
-    .replace(/\\\)/g, ')')
-    .replace(/\\\\/g, '\\');
-}
-
-function extractTextFromContentStream(content: string): string {
-  const parts: string[] = [];
-
-  const literalTjRegex = /\(((?:[^()\\]|\\.)*)\)\s*(?:Tj|'|")/g;
-  let m: RegExpExecArray | null;
-  while ((m = literalTjRegex.exec(content))) {
-    parts.push(decodeLiteral(m[1]));
-  }
-
-  const tjArrayRegex = /\[((?:[^\[\]]|\\.)*)\]\s*TJ/g;
-  while ((m = tjArrayRegex.exec(content))) {
-    const strRegex = /\(((?:[^()\\]|\\.)*)\)/g;
-    let sm: RegExpExecArray | null;
-    let piece = '';
-    while ((sm = strRegex.exec(m[1]))) {
-      piece += decodeLiteral(sm[1]);
-    }
-    if (piece) parts.push(piece);
-  }
-
-  return parts.join(' ');
-}
-
-function parseBufferFallback(buffer: Buffer): { pages: DocumentPage[]; fullText: string } {
-  const streams = extractStreams(buffer);
-  const textChunks: string[] = [];
-
-  for (const raw of streams) {
-    const decompressed = inflateIfPossible(raw) ?? raw;
-    const content = decompressed.toString('latin1');
-    const extracted = extractTextFromContentStream(content);
-    if (extracted.trim()) textChunks.push(extracted);
-  }
-
-  const fullText = textChunks.join(' ').replace(/\s+/g, ' ').trim()
-    || 'No extractable text found in this document.';
-
-  const rawLatin1 = buffer.toString('latin1');
-  const pageMatch = rawLatin1.match(/\/Type\s*\/Page\b/g);
-  const pageCount = Math.max(1, pageMatch ? pageMatch.length : 1);
-
-  const words = fullText.split(' ');
-  const wordsPerPage = Math.max(1, Math.ceil(words.length / pageCount));
-  const pages: DocumentPage[] = Array.from({ length: pageCount }, (_, i) => ({
-    pageNumber: i + 1,
-    text: words.slice(i * wordsPerPage, (i + 1) * wordsPerPage).join(' ').trim(),
-  }));
-
-  return { pages, fullText };
-}
-
 function detectSections(pages: DocumentPage[]): DocumentSection[] {
   const sections: DocumentSection[] = [];
   const sectionRegex = /(?:SECTION|ARTICLE|CLAUSE)\s+([0-9A-Z]+)[.:\s]+([^\n]+)/i;
@@ -114,15 +13,15 @@ function detectSections(pages: DocumentPage[]): DocumentSection[] {
       const trimmed = line.trim();
       const match = trimmed.match(sectionRegex);
       if (match) {
-        sections.push({ title: trimmed.slice(0, 80), pageNumber: page.pageNumber });
+        sections.push({ title: trimmed.slice(0, 80), level: 1, pageNumber: page.pageNumber, startChar: page.startOffset });
       } else if (/^[0-9]\.[0-9]\s+[A-Z]/.test(trimmed)) {
-        sections.push({ title: trimmed.slice(0, 60), pageNumber: page.pageNumber });
+        sections.push({ title: trimmed.slice(0, 60), level: 2, pageNumber: page.pageNumber, startChar: page.startOffset });
       }
     }
   }
 
   if (sections.length === 0) {
-    sections.push({ title: 'General Provisions', pageNumber: 1 });
+    sections.push({ title: 'General Provisions', level: 1, pageNumber: 1, startChar: 0 });
   }
 
   return sections;
@@ -134,33 +33,49 @@ export async function extractDocument(
   mimeType?: string
 ): Promise<ExtractedDocument> {
   const id = randomUUID();
-  let pages: DocumentPage[] = [];
-  let fullText = '';
+  let rawPages: { pageNumber: number; text: string }[] = [];
 
   const isDocx = filename.endsWith('.docx') || mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 
   if (isDocx) {
     const result = await mammoth.extractRawText({ buffer });
-    fullText = result.value;
-    pages = [{ pageNumber: 1, text: fullText }];
+    rawPages = [{ pageNumber: 1, text: result.value }];
   } else {
     const pdf = await getDocumentProxy(new Uint8Array(buffer));
     const { text } = await extractText(pdf, { mergePages: false });
     const pageTexts = Array.isArray(text) ? text : [text];
-    pages = pageTexts.map((t, i) => ({ pageNumber: i + 1, text: t }));
-    fullText = pageTexts.join(' ').replace(/\s+/g, ' ').trim()
-      || 'No extractable text found in this document.';
+    rawPages = pageTexts.map((t, i) => ({ pageNumber: i + 1, text: t }));
   }
 
+  // Build fullText and per-page character offsets from ONE source of truth,
+  // so page.startOffset/endOffset always agree exactly with fullText.
+  // (Previously these offsets were never set, silently breaking quote
+  // verification and search context windows downstream.)
+  let cursor = 0;
+  const pages: DocumentPage[] = [];
+  const fullTextParts: string[] = [];
+
+  for (const rp of rawPages) {
+    const text = rp.text || '';
+    const startOffset = cursor;
+    const endOffset = startOffset + text.length;
+    pages.push({ pageNumber: rp.pageNumber, text, startOffset, endOffset });
+    fullTextParts.push(text);
+    cursor = endOffset + 1; // +1 accounts for the '\n' separator joined below
+  }
+
+  const fullText = fullTextParts.join('\n').trim() || 'No extractable text found in this document.';
   const sections = detectSections(pages);
 
   return {
     id,
     name: filename,
     filename,
+    pageCount: pages.length,
     pages,
     sections,
     fullText,
+    createdAt: Date.now(),
     uploadedAt: new Date().toISOString(),
   };
 }
