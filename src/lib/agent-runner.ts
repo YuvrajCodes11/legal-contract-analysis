@@ -27,7 +27,7 @@ export interface AgentRunnerOptions {
   onStep?: (event: AgentStepEvent) => void;
 }
 
-const GROQ_MODEL = 'openai/gpt-oss-20b';
+const GROQ_MODEL = 'meta-llama/llama-4-scout-17b-16e-instruct';
 
 /**
  * Extracts quote candidates strictly from <quote>...</quote> XML tags.
@@ -341,10 +341,12 @@ export async function runAgentLoop(
             toolResult: result,
           });
 
+          const resultStr = JSON.stringify(result);
+          const truncatedResult = resultStr.length > 4000 ? resultStr.slice(0, 4000) + '...[truncated]' : resultStr;
           messages.push({
             role: 'tool',
             tool_call_id: tc.id,
-            content: JSON.stringify(result),
+            content: truncatedResult,
           });
         }
 
