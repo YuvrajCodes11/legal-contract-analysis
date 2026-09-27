@@ -27,7 +27,7 @@ export interface AgentRunnerOptions {
   onStep?: (event: AgentStepEvent) => void;
 }
 
-const GROQ_MODEL = 'meta-llama/llama-4-scout-17b-16e-instruct';
+const GROQ_MODEL = 'openai/gpt-oss-20b';
 
 /**
  * Extracts quote candidates strictly from <quote>...</quote> XML tags.
@@ -151,7 +151,7 @@ RULES:
 6. When your research is complete, reply with your final answer as plain text with no further tool calls.`;
 }
 
-async function callGroqChatWithTools(messages: any[], tools: any[]): Promise<any> {
+async function callGroqChatWithTools(messages: any[], tools: any[], retried = false): Promise<any> {
   const apiKey = process.env.GROQ_API_KEY || process.env.OPENAI_API_KEY;
   if (!apiKey) throw new Error('No LLM API key configured (set GROQ_API_KEY in environment variables).');
 
@@ -167,9 +167,18 @@ async function callGroqChatWithTools(messages: any[], tools: any[]): Promise<any
       tools,
       tool_choice: 'auto',
       temperature: 0.1,
-      max_tokens: 1200,
+      max_tokens: 500,
     }),
   });
+
+  if (res.status === 429 && !retried) {
+    const errText = await res.text();
+    let waitMs = 5000;
+    const match = errText.match(/try again in ([\d.]+)s/i);
+    if (match) waitMs = Math.ceil(parseFloat(match[1]) * 1000) + 500;
+    await new Promise((resolve) => setTimeout(resolve, waitMs));
+    return callGroqChatWithTools(messages, tools, true);
+  }
 
   if (!res.ok) {
     const errText = await res.text();
