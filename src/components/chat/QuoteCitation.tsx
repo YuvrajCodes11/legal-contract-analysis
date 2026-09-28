@@ -50,7 +50,7 @@ export const QuoteCitation: React.FC<QuoteCitationProps> = ({ citation, docId })
         </p>
         {citation.docFilename && (
           <span className="block mt-1 text-[9px] text-emerald-400/60 font-mono truncate">
-            \u2014 {citation.docFilename}
+            — {citation.docFilename}
           </span>
         )}
       </div>

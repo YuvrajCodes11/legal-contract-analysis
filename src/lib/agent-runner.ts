@@ -148,10 +148,11 @@ RULES:
 3. Back every factual claim with an exact, verbatim quotation enclosed strictly in <quote>...</quote> tags. Never paraphrase inside the tags, and never truncate or alter the quoted text.
 4. You have a hard cap of a few tool-call rounds. If you only had time to check some pages/sections of a large document, say so explicitly in your final answer instead of claiming full coverage (e.g. "I checked pages 1-3 and found no mention of X; the remaining pages were not reviewed").
 5. If information is not present in what you reviewed, state that clearly rather than inventing an answer.
-6. When your research is complete, reply with your final answer as plain text with no further tool calls.`;
+6. When your research is complete, reply with your final answer as plain text with no further tool calls.
+7. For broad questions such as 'what is this about', 'main points' or 'summarize', do NOT keyword search. Call get_page_content for page 1 (and list_sections if useful) and summarize from that, quoting exact text.`;
 }
 
-async function callGroqChatWithTools(messages: any[], tools: any[], retried = false): Promise<any> {
+async function callGroqChatWithTools(messages: any[], tools: any[], retried = false, forceAnswer = false): Promise<any> {
   const apiKey = process.env.GROQ_API_KEY || process.env.OPENAI_API_KEY;
   if (!apiKey) throw new Error('No LLM API key configured (set GROQ_API_KEY in environment variables).');
 
@@ -165,9 +166,9 @@ async function callGroqChatWithTools(messages: any[], tools: any[], retried = fa
       model: GROQ_MODEL,
       messages,
       tools,
-      tool_choice: 'auto',
+      tool_choice: forceAnswer ? 'none' : 'auto',
       temperature: 0.1,
-      max_tokens: 500,
+      max_tokens: 700,
     }),
   });
 
@@ -177,7 +178,7 @@ async function callGroqChatWithTools(messages: any[], tools: any[], retried = fa
     const match = errText.match(/try again in ([\d.]+)s/i);
     if (match) waitMs = Math.ceil(parseFloat(match[1]) * 1000) + 500;
     await new Promise((resolve) => setTimeout(resolve, waitMs));
-    return callGroqChatWithTools(messages, tools, true);
+    return callGroqChatWithTools(messages, tools, true, forceAnswer);
   }
 
   if (!res.ok) {
@@ -315,7 +316,14 @@ export async function runAgentLoop(
 
   try {
     while (iteration <= maxIter) {
-      const response = await callGroqChatWithTools(messages, tools);
+      const isLastRound = iteration === maxIter;
+      if (isLastRound) {
+        messages.push({
+          role: 'user',
+          content: 'You have gathered enough information. Write your final answer now using only what you found, with exact <quote>...</quote> tags, and state which pages or sections you actually reviewed. Do not call any more tools.',
+        });
+      }
+      const response = await callGroqChatWithTools(messages, tools, false, isLastRound);
       const choice = response.choices?.[0];
       const msg = choice?.message;
 

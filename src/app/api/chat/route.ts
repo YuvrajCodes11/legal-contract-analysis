@@ -46,7 +46,7 @@ export async function POST(req: NextRequest) {
             {
               docId: targetDocs[0].id,
               question,
-              maxIterations: 3,
+              maxIterations: 4,
             },
             targetDocs,
             {
